@@ -1,0 +1,7 @@
+.venv/
+.env
+.rail-agent/
+trip.json
+__pycache__/
+*.egg-info/
+dist/
