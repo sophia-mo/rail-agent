@@ -15,6 +15,13 @@ def trip(**changes):
 
 
 class ConfigTests(unittest.TestCase):
+    def test_seat_letter_preference(self):
+        for letter in ('A', 'B', 'C', 'D', 'F', None):
+            self.assertEqual(trip(prefer_seat=letter).validate(date(2026, 9, 22)).prefer_seat, letter)
+        for invalid in ('E', 'f', '', True, ['A', 'F']):
+            with self.assertRaises(ValueError):
+                trip(prefer_seat=invalid).validate(date(2026, 9, 22))
+
     def test_quiet_preference_requires_explicit_boolean(self):
         self.assertFalse(trip().prefer_quiet)
         self.assertTrue(trip(prefer_quiet=True).validate(date(2026, 9, 22)).prefer_quiet)

@@ -21,7 +21,7 @@ class Trip:
     trains: list[str] = field(default_factory=list)
     seat: str = "二等座"
     student: bool = False
-    prefer_f: bool = True
+    prefer_seat: str | None = "F"
     prefer_quiet: bool = False
     poll_seconds: int = 30
     timeout_minutes: int = 60
@@ -44,8 +44,10 @@ class Trip:
             raise ValueError("请填写不同的出发站和到达站全名")
         if self.seat not in SEATS:
             raise ValueError("席别支持：商务座、一等座、二等座")
-        if type(self.student) is not bool or type(self.prefer_f) is not bool:
-            raise ValueError("student / prefer_f 必须是 JSON 布尔值")
+        if type(self.student) is not bool:
+            raise ValueError("student 必须是 JSON 布尔值")
+        if self.prefer_seat is not None and self.prefer_seat not in ("A", "B", "C", "D", "F"):
+            raise ValueError("prefer_seat 必须是 A、B、C、D、F 之一，或 null")
         if type(self.prefer_quiet) is not bool:
             raise ValueError("prefer_quiet 必须是 JSON 布尔值")
         if not isinstance(self.passengers, list) or not 1 <= len(self.passengers) <= 5:

@@ -39,7 +39,7 @@ RAIL_MODEL=YOUR_MODEL
   "seat": "二等座",            // 商务座、一等座或二等座，不自动改席别
   "student": true,            // 是否学生票
   "passengers": ["Alice"],    // 1–5 名已有乘车人，自动兼容页面上的 (学生) 后缀，同名无法唯一识别时停止
-  "prefer_f": true,           // 默认 true，有 F 座选项时尝试选择，否则接受系统分配
+  "prefer_seat": "F",         // 可选 A、B、C、D、F，默认 F；null 表示不指定，实际以网站分配为准
   "prefer_quiet": true,       // true 时勾选 "优先分配静音车厢"，默认 false
   "poll_seconds": 30,         // 每次查询间隔，默认 30 秒，至少 15 秒
   "timeout_minutes": 60       // 总监控时长，默认 60 分钟

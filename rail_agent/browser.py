@@ -314,14 +314,14 @@ class Booker:
     def fill_passengers(self):
         self.order_progress("等待乘车人列表容器加载")
         passenger_list = self.page.locator("#normal_passenger_id")
-        # A floated/contents list can have no bounding box while its children
-        # are visible. Hidden native inputs can also have visible labels.
+        # A floated/contents list can have no bounding box while its children are visible.
+        # Hidden native inputs can also have visible labels.
         passenger_list.wait_for(state="attached")
         self.order_progress("等待乘车人复选框加载")
         passenger_list.locator('input[type="checkbox"]').first.wait_for(state="attached")
         selected = []
-        # Resolve all names before changing selection; allow only known display
-        # annotations, not arbitrary substrings (陈默 must not match 陈默然).
+        # Resolve all names before changing selection; allow only known display annotations,
+        # not arbitrary substrings.
         for name in self.trip.passengers:
             self.order_progress("匹配配置中的乘车人")
             pattern = re.compile(r"^\s*" + re.escape(name) + r"\s*(?:\(\s*学生\s*\)|（\s*学生\s*）)?\s*$")
@@ -441,9 +441,9 @@ class Booker:
         confirm = self.page.locator("#qr_submit_id")
         confirm.wait_for(state="visible")
         self.guard()
-        if self.trip.prefer_f:
-            # Only click visible, explicitly labelled F seats; never infer coordinates.
-            choices = self.page.locator('#id-seat-sel:visible').get_by_text("F", exact=True)
+        if self.trip.prefer_seat:
+            # Only click the requested seat letter; never infer coordinates.
+            choices = self.page.locator('#id-seat-sel:visible').get_by_text(self.trip.prefer_seat, exact=True)
             selected = 0
             for choice in choices.all():
                 if selected == len(self.trip.passengers):
@@ -451,7 +451,7 @@ class Booker:
                 if choice.is_visible() and choice.is_enabled():
                     choice.click()
                     selected += 1
-            print(f"已尝试选择 {selected} 个 F 座偏好；实际座位以网站分配为准。", flush=True)
+            print(f"已尝试选择 {selected} 个 {self.trip.prefer_seat} 座偏好；实际座位以网站分配为准。", flush=True)
         self.select_quiet_preference()
         self.order_progress("等待确认按钮可用")
         self.page.wait_for_function("""() => {

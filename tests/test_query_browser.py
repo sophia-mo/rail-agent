@@ -165,6 +165,27 @@ class QueryBrowserTests(unittest.TestCase):
         self.assertEqual(self.page.locator('#ticketType_0').input_value(), '学生票')
         self.assertEqual(self.page.evaluate('[submits,confirms,payments]'), [1,1,0])
 
+    def test_configured_seat_letter_is_clicked(self):
+        from dataclasses import replace
+        for letter in ('A', 'B', 'C', 'D', 'F', None):
+            with self.subTest(letter=letter):
+                self.passenger_page()
+                self.booker.trip = replace(self.booker.trip, prefer_seat=letter)
+                self.booker.preview = False
+                self.booker.fill_passengers = Mock()  # Other tests cover passenger selection.
+                self.page.evaluate('''() => {
+                    window.selectedLetters=[];
+                    const panel=document.createElement('div');panel.id='id-seat-sel';
+                    for(const letter of ['A','B','C','D','F']) {
+                        const seat=document.createElement('button');seat.textContent=letter;
+                        seat.onclick=()=>window.selectedLetters.push(letter);panel.append(seat);
+                    }
+                    document.body.append(panel);
+                }''')
+                self.booker.order(self.page.locator('#reserve'), 'G103', '2026-10-01')
+                self.assertEqual(self.page.evaluate('selectedLetters'), [letter] if letter else [])
+                self.assertEqual(self.page.evaluate('[confirms,payments]'), [1,0])
+
     def test_quiet_preference_and_notice_before_final_confirmation(self):
         from dataclasses import replace
         self.passenger_page()
