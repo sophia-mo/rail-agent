@@ -11,7 +11,6 @@ from .config import Trip
 
 def main():
     parser = argparse.ArgumentParser(description="12306 LangChain 购票助手（人工登录、人工支付）")
-    parser.add_argument("--state-dir", type=Path, help="固定登录状态目录，也可设置 RAIL_STATE_DIR")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("login", help="手动登录专用浏览器，保存状态")
     clear = sub.add_parser("clear-attempt", help="检查未完成订单后清除尝试锁")
@@ -25,7 +24,7 @@ def main():
     from dotenv import load_dotenv
     load_dotenv()
     from .session import state_directory, restore_session, save_session, login_status
-    args.state_dir = state_directory(args.state_dir)
+    args.state_dir = state_directory()
     args.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     args.state_dir.chmod(0o700)
     print(f"登录状态目录：{args.state_dir}", flush=True)

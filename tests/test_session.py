@@ -25,6 +25,8 @@ class SessionTests(unittest.TestCase):
     def test_default_directory_does_not_depend_on_current_working_directory(self):
         with patch.dict('os.environ', {}, clear=True):
             first = state_directory()
+            with patch.dict('os.environ', {'RAIL_STATE_DIR': '/tmp/ignored-rail-directory'}):
+                self.assertEqual(first, state_directory())
             with patch('pathlib.Path.cwd', return_value=Path('/tmp')):
                 self.assertEqual(first, state_directory())
 

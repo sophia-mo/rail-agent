@@ -1,11 +1,10 @@
-# rail-agent
+# Rail Agent
 
-LangChain + Playwright 的 12306 网页购票助手。
-手动登录，按配置查询余票，选择账户中已保存的乘车人，尝试 F 座偏好，提交后由你支付。
+LangChain + Playwright 的 12306 网页购票助手
 
 ## 安装
 
-需要 Python 3.10+ 和桌面环境。
+需要 Python 3.10+ 和桌面环境
 ```bash
 # 创建并激活环境
 conda create -n rail python=3.11 -y
@@ -16,9 +15,8 @@ python -m pip install -e .
 python -m playwright install chromium
 ```
 
-## 配置文件
+添加以下两个配置文件
 
-添加以下两个文件
 ### .env
 ```bash
 # OpenAI-compatible model supporting tool calls
@@ -50,8 +48,7 @@ RAIL_MODEL=YOUR_MODEL
 
 ## 功能
 ### 自动购票
-
-1. 执行 `rail-agent login`，在专用浏览器中手动登录，可扫码。等登录成功并跳转后，保持窗口打开，回终端按回车。程序先保存会话，再通过浏览器页面检查登录有效性，报告结果后关闭。检查未通过或无法确认时也会保存，但不会宣称已登录。
+1. 执行 `rail-agent login`，在浏览器中手动登录。等登录成功并跳转后，保持窗口打开，回终端按回车。程序先保存会话，再通过浏览器页面检查登录有效性，报告结果后关闭。网站使会话过期或失效时需重新登录。
 2. 修改 `trip.json`，填写车站、时间、席别、学生票与已有乘车人姓名。
 3. 首次运行请执行 `rail-agent run trip.json --preview --direct`，程序会停在“提交订单”之前，供你核对信息。
 4. 检查网站未完成订单，再执行 `rail-agent clear-attempt --checked-orders` 清除未完成订单。
@@ -59,8 +56,7 @@ RAIL_MODEL=YOUR_MODEL
 
 > 注：按日期先后、页面车次顺序购买首个符合条件的车次。仅在指定席别余票足够全部乘车人时预订，不买候补、无座或部分乘车人的票。学生资格由网站校验；登录、验证码和未知弹窗需人工处理。
 
-## 定时购票
-
+### 定时购票
 ```bash
 rail-agent run trip.json --direct --start-at "2026-10-07 16:30:00"
 ```
@@ -71,26 +67,23 @@ rail-agent run trip.json --direct --start-at "2026-10-07 16:30:00"
 
 建议提前几分钟启动，使用 `--direct` 避免模型调用延迟，提前保存登录状态。电脑须保持唤醒、联网，终端和浏览器保持打开，等待时不要修改查询表单。时间取自本机时钟；页面加载、网络和服务器处理都有延迟，不能保证毫秒精度或抢票成功。若准备页面耗时超过放票时间，会在准备完成后立即查询，不安装系统后台定时任务。
 
-## 登录与重复订单
+## 注意事项
+### 以下步骤需手动完成
+- 登录
+- 添加乘车人信息
+- 支付
 
-正常查询但未找到合适余票，以及查询响应超时、服务端临时故障或返回未成功时，会等待 `poll_seconds` 秒后继续下一次查询，直到监控时限结束。终端会显示等待秒数。登录、验证码、限流、页面操作异常及预订后的失败仍会停止，不自动重试下单。
+### 重试
+未找到合适余票、查询响应超、服务端临时故障或返回未成功时，会等待 `poll_seconds` 秒后继续下一次查询，直到监控时限结束。
 
-默认状态目录固定在本项目的 `.rail-agent`，不会随命令运行目录改变；非源码安装默认使用用户主目录的 `.rail-agent`。启动时会打印绝对路径。`browser` 保存浏览器配置和本地存储，`session.json` 额外保存会话 Cookie，启动时自动恢复。不能直接继承平时 Chrome 的登录标签页。之后直接运行 `run`，不必先运行 `login`。网站使会话过期或失效时仍需重新登录。
+### 登录状态保存
+`browser` 保存浏览器配置和本地存储，`session.json` 额外保存会话 Cookie，启动时自动恢复。不能直接继承平时 Chrome 的登录标签页。之后直接运行 `run`，不必先运行 `login`。网站使会话过期或失效时仍需重新登录。
 
-也可指定固定路径，所有命令必须使用同一路径（`--state-dir` 放在子命令前）：
+状态目录固定在本项目的 `.rail-agent`，不会随命令运行目录改变。登录完成或手动支付后，通过终端回车正常保存并关闭；直接关闭整个浏览器可能导致本次会话无法保存。`clear-attempt` 只清除购票尝试记录，不清除登录状态。
 
-```bash
-rail-agent --state-dir /你的固定目录/rail-session login
-rail-agent --state-dir /你的固定目录/rail-session run trip.json --preview --direct
-```
+不要分享 `session.json`, `.env`, `trip.json`
 
-或在 `.env` 中设置 `RAIL_STATE_DIR=/你的固定目录/rail-session`。使用原有 `.rail-agent` 目录即可保留已有数据。不要同时运行多个使用该目录的任务。登录完成或手动支付后，通过终端回车正常保存并关闭；直接关闭整个浏览器可能导致本次会话无法保存。`clear-attempt` 只清除购票尝试记录，不清除登录状态。不要分享 `session.json`。
-
-预订前写入 `.rail-agent/attempt.json`。预订后的失败、崩溃或超时都会留下记录，后续运行拒绝重复购票。检查网站未完成订单后才执行 `clear-attempt --checked-orders`；该命令只删除本地记录，不取消网站订单。
-
-`.env`、`trip.json`、浏览器目录已被 Git 忽略。不要分享浏览器目录。模型仅收到工具状态，不接收乘车人列表、截图、Cookie 或身份证信息。
-
-## 开发
+## 开发与测试
 
 ```bash
 python -m unittest discover -s tests -v

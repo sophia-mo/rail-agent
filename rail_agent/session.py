@@ -9,10 +9,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
-def state_directory(explicit=None):
+def state_directory():
     project = Path(__file__).resolve().parent.parent
     default = project / ".rail-agent" if (project / "pyproject.toml").exists() else Path.home() / ".rail-agent"
-    return Path(explicit or os.getenv("RAIL_STATE_DIR") or default).expanduser().resolve()
+    return default.resolve()
 
 
 def railway_cookie(cookie):
