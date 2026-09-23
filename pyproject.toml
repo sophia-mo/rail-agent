@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "rail-agent"
 version = "0.1.0"
 description = "LangChain + Playwright 12306 booking assistant"
+license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = ["langchain>=1.0,<2", "langchain-openai>=1.0,<2", "playwright>=1.50,<2", "python-dotenv>=1,<2"]
 

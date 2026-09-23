@@ -1,6 +1,8 @@
 # Rail Agent
 
-LangChain + Playwright 的 12306 网页购票助手
+基于 LangChain + Playwright 的 12306 网页购票助手，支持按车站、日期、发车时间、车次和席别筛选余票，定时启动并轮询查询。有票时自动选择已保存的乘车人、处理学生票确认、设置座位及静音车厢偏好，并提交订单，支付由用户手动完成。
+
+目前通过 `trip.json` 和命令行配置、执行任务，尚未提供 Chatbot 对话界面。项目已接入 LangChain 工具调用，可作为后续扩展自然语言配置行程和对话交互的基础；使用 `--direct` 可直接执行购票流程，无需调用模型。
 
 ## 安装
 
@@ -107,3 +109,8 @@ python -m unittest discover -s tests -v
 LangChain `create_agent` 调用无参数工具 `watch_and_book`；本地配置固定行程，工具确定性执行网页流程，限制模型修改行程或重复下单。
 
 参考：[12306 查询页](https://kyfw.12306.cn/otn/leftTicket/init), [LangChain agents](https://docs.langchain.com/oss/python/langchain/agents), [Playwright 登录状态](https://playwright.dev/python/docs/auth)
+
+
+## License
+
+本项目采用 [PolyForm Noncommercial License 1.0.0](LICENSE)，仅授权符合许可证条款的非商业用途。商业用途需另行获得版权所有者授权。
