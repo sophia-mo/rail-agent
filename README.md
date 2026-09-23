@@ -53,16 +53,14 @@ RAIL_MODEL=YOUR_MODEL
     rail-agent login
     ```
 
-2. 首次运行可以执行：
+2. 首次运行可以执行以下命令，程序会停在 "提交订单" 之前，供你核对信息，确保程序符合预期。
     ```bash
     rail-agent run trip.json --preview --direct
     ```
-    程序会停在 "提交订单" 之前，供你核对信息，确保程序符合预期。
-    然后执行：
+    然后执行以下命令清除未完成订单：
     ```bash
     rail-agent clear-attempt --checked-orders
     ```
-    清除未完成订单。
 
 3. 正式运行时执行以下命令自动购票，进入待支付页面后自行支付。终端按回车关闭浏览器。
     ```bash
