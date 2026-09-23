@@ -95,4 +95,4 @@ python -m unittest discover -s tests -v
 
 LangChain `create_agent` 调用无参数工具 `watch_and_book`；本地配置固定行程，工具确定性执行网页流程，限制模型修改行程或重复下单。
 
-参考：[12306 查询页](https://kyfw.12306.cn/otn/leftTicket/init)、[LangChain agents](https://docs.langchain.com/oss/python/langchain/agents)、[Playwright 登录状态](https://playwright.dev/python/docs/auth)。
+参考：[12306 查询页](https://kyfw.12306.cn/otn/leftTicket/init), [LangChain agents](https://docs.langchain.com/oss/python/langchain/agents), [Playwright 登录状态](https://playwright.dev/python/docs/auth)
