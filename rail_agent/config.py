@@ -25,8 +25,12 @@ class Trip:
     prefer_quiet: bool = False
     poll_seconds: int = 30
     timeout_minutes: int = 60
+    start_at: str | None = None
 
     def validate(self, today=None):
+        if self.start_at is not None:
+            from .schedule import parse_start_at
+            parse_start_at(self.start_at)
         today = today or datetime.now(ZoneInfo("Asia/Shanghai")).date()
         start, end = date.fromisoformat(self.date_start), date.fromisoformat(self.date_end)
         if not today <= start <= end or (end - start).days > 14:

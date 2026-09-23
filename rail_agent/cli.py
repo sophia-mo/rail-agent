@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 
 from .config import Trip
@@ -19,6 +20,7 @@ def main():
     run.add_argument("config", type=Path)
     run.add_argument("--preview", action="store_true", help="填写订单后暂停，不提交")
     run.add_argument("--direct", action="store_true", help="跳过模型，直接执行同一购票工具")
+    run.add_argument("--start-at", help="北京时间定时查询，例如 16:30 或 '2026-09-23 16:30:00'，覆盖 JSON start_at")
     args = parser.parse_args()
     from dotenv import load_dotenv
     load_dotenv()
@@ -33,7 +35,10 @@ def main():
         return
     trip = None
     if args.command == "run":
-        trip = Trip(**json.loads(args.config.read_text())).validate()
+        trip = Trip(**json.loads(args.config.read_text()))
+        if args.start_at is not None:
+            trip = replace(trip, start_at=args.start_at)
+        trip.validate()
         print(f"配置文件：{args.config.resolve()}", flush=True)
         print(f"行程：{trip.origin} → {trip.destination}，{trip.date_start} 至 {trip.date_end}，"
               f"每天 {trip.time_start}–{trip.time_end}，{trip.seat}，"

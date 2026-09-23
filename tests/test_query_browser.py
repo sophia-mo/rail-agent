@@ -3,6 +3,10 @@ import importlib.util
 import tempfile
 import json
 import unittest
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
+from unittest.mock import patch, Mock
 
 from rail_agent.browser import Booker, ManualAction, QUERY_URL
 from rail_agent.config import Trip
@@ -83,6 +87,42 @@ document.getElementById('query_ticket').onclick = async e => {
 
 @unittest.skipUnless(importlib.util.find_spec("playwright"), "需要安装 Playwright")
 class QueryBrowserTests(unittest.TestCase):
+    @contextmanager
+    def query_redirect_server(self, target):
+        # Playwright routing does not reliably intercept redirected requests;
+        # use a loopback server so the entire redirect stays off the Internet.
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                if self.path.startswith('/otn/leftTicket/query?'):
+                    self.send_response(302)
+                    self.send_header('Location', target)
+                    self.end_headers()
+                    return
+                data = (b'{"status":true,"data":{"result":["fixture"]}}'
+                        if self.path.startswith('/otn/leftTicket/queryG') else FIXTURE.encode())
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json' if self.path.startswith('/otn/leftTicket/queryG') else 'text/html; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(data)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f'http://127.0.0.1:{server.server_port}'
+        from rail_agent.browser import is_query_endpoint
+        self.page.unroute('**/*')
+        self.booker.guard = Mock()
+        try:
+            with patch('rail_agent.browser.QUERY_URL', base + '/otn/leftTicket/init'), patch(
+                'rail_agent.browser.is_query_endpoint', side_effect=lambda url: is_query_endpoint(url.replace(base, 'https://kyfw.12306.cn'))):
+                yield
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def passenger_page(self, suffix='(学生)', duplicate=False):
         from dataclasses import replace
         self.booker.trip = replace(self.trip, passengers=['陈默'])
@@ -303,6 +343,26 @@ class QueryBrowserTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate("window.observed"), {
             "origin":"北京南", "destination":"上海虹桥", "fromCode":"VNP", "toCode":"AOH",
             "date":"2026-10-01", "student":True})
+        self.assertFalse(self.booker.state_file.exists())
+
+    def test_prepared_form_is_used_without_reloading_or_early_query(self):
+        self.booker.prepare_query('2026-10-01')
+        self.assertIsNone(self.page.evaluate('window.observed'))
+        with patch.object(self.page, 'goto', side_effect=AssertionError('prepared page must not reload')):
+            _, train = self.booker.query('2026-10-01')
+        self.assertEqual(train, 'G103')
+        self.assertIsNone(self.booker.prepared_day)
+
+    def test_query_302_to_another_query_endpoint_uses_final_response(self):
+        with self.query_redirect_server('/otn/leftTicket/queryG?fixture=1'):
+            _, train = self.booker.query('2026-10-01')
+        self.assertEqual(train, 'G103')
+        self.assertFalse(self.booker.state_file.exists())
+
+    def test_query_302_to_login_does_not_retry_or_book(self):
+        with self.query_redirect_server('/otn/resources/login.html'):
+            with self.assertRaisesRegex(ManualAction, '非查询页面'):
+                self.booker.query('2026-10-01')
         self.assertFalse(self.booker.state_file.exists())
 
     def test_jining_north_candidate_is_clicked_before_destination(self):

@@ -48,7 +48,9 @@ RAIL_MODEL=YOUR_MODEL
 }
 ```
 
-## 使用
+## 功能
+### 自动购票
+
 1. 执行 `rail-agent login`，在专用浏览器中手动登录，可扫码。等登录成功并跳转后，保持窗口打开，回终端按回车。程序先保存会话，再通过浏览器页面检查登录有效性，报告结果后关闭。检查未通过或无法确认时也会保存，但不会宣称已登录。
 2. 修改 `trip.json`，填写车站、时间、席别、学生票与已有乘车人姓名。
 3. 首次运行请执行 `rail-agent run trip.json --preview --direct`，程序会停在“提交订单”之前，供你核对信息。
@@ -57,7 +59,21 @@ RAIL_MODEL=YOUR_MODEL
 
 > 注：按日期先后、页面车次顺序购买首个符合条件的车次。仅在指定席别余票足够全部乘车人时预订，不买候补、无座或部分乘车人的票。学生资格由网站校验；登录、验证码和未知弹窗需人工处理。
 
+## 定时购票
+
+```bash
+rail-agent run trip.json --direct --start-at "2026-10-07 16:30:00"
+```
+
+也可在 `trip.json` 中添加 `"start_at": "2026-09-23 16:30:00"`，再执行 `rail-agent run trip.json --direct`。命令行参数优先于 JSON；只写 `"16:30"` 表示启动当天的北京时间，不是每天重复任务。省略或设为 `null` 立即查询；时间已过也立即查询。
+
+程序会提前 60 秒加载页面，填好首个乘车日期、车站和票种，到点后直接点击查询。有票则继续现有预订流程；没票按 `poll_seconds` 等待后重查，`timeout_minutes` 从定时等待结束后计算。多个日期仍按先后查询，想优先抢某天请将日期范围设为当天。
+
+建议提前几分钟启动，使用 `--direct` 避免模型调用延迟，提前保存登录状态。电脑须保持唤醒、联网，终端和浏览器保持打开，等待时不要修改查询表单。时间取自本机时钟；页面加载、网络和服务器处理都有延迟，不能保证毫秒精度或抢票成功。若准备页面耗时超过放票时间，会在准备完成后立即查询，不安装系统后台定时任务。
+
 ## 登录与重复订单
+
+正常查询但未找到合适余票，以及查询响应超时、服务端临时故障或返回未成功时，会等待 `poll_seconds` 秒后继续下一次查询，直到监控时限结束。终端会显示等待秒数。登录、验证码、限流、页面操作异常及预订后的失败仍会停止，不自动重试下单。
 
 默认状态目录固定在本项目的 `.rail-agent`，不会随命令运行目录改变；非源码安装默认使用用户主目录的 `.rail-agent`。启动时会打印绝对路径。`browser` 保存浏览器配置和本地存储，`session.json` 额外保存会话 Cookie，启动时自动恢复。不能直接继承平时 Chrome 的登录标签页。之后直接运行 `run`，不必先运行 `login`。网站使会话过期或失效时仍需重新登录。
 
@@ -80,10 +96,10 @@ rail-agent --state-dir /你的固定目录/rail-session run trip.json --preview 
 python -m unittest discover -s tests -v
 ```
 
-测试覆盖时间/车次过滤、多人余票、查询间隔、提交前持久化、防重复尝试和预览不提交，不产生真实订单。网页选择器集中在 `rail_agent/browser.py`。F 座和待支付标记仍需账户联调确认。
+测试覆盖时间/车次过滤、多人余票、查询间隔、提交前持久化、防重复尝试和预览不提交，不产生真实订单。网页选择器集中在 `rail_agent/browser.py`。
 
-`tests/test_query_browser.py` 使用 Chromium 和本地模拟页面，验证延迟初始化、站名候选项的键盘事件、完整表单填写及查询请求。网络请求全部被本地拦截，不访问账户；需先安装 Playwright Chromium。
+`tests/test_query_browser.py` 使用 Chromium 和本地模拟页面，验证延迟初始化、站名候选项的键盘事件、完整表单填写及查询请求。
 
-LangChain `create_agent` 调用无参数工具 `watch_and_book`；本地配置固定行程，工具确定性执行网页流程，限制模型修改行程或重复下单。模型错误不能作为网站订单失败的重试依据。
+LangChain `create_agent` 调用无参数工具 `watch_and_book`；本地配置固定行程，工具确定性执行网页流程，限制模型修改行程或重复下单。
 
 参考：[12306 查询页](https://kyfw.12306.cn/otn/leftTicket/init)、[LangChain agents](https://docs.langchain.com/oss/python/langchain/agents)、[Playwright 登录状态](https://playwright.dev/python/docs/auth)。

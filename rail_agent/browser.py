@@ -4,7 +4,8 @@ import re
 import time
 import json
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
+from datetime import datetime, timedelta
 
 from .config import SEATS, enough_tickets
 
@@ -16,12 +17,74 @@ class ManualAction(RuntimeError):
     """Leave the visible browser open for the user; never retry a purchase."""
 
 
+class RetryableQuery(RuntimeError):
+    """A read-only query failed temporarily; no purchase was attempted."""
+
+
+REDIRECTS = {301, 302, 303, 307, 308}
+
+
+def is_query_endpoint(url):
+    parsed = urlparse(url)
+    return (parsed.scheme == 'https' and parsed.hostname == 'kyfw.12306.cn'
+            and re.fullmatch(r'/otn/leftTicket/query[A-Za-z]*', parsed.path) is not None)
+
+
+def query_response_ready(response):
+    # Follow the browser's redirect chain; do not launch a second API request.
+    request = response.request
+    belongs_to_query = False
+    while request is not None:
+        if request.method == 'GET' and is_query_endpoint(request.url):
+            belongs_to_query = True
+            break
+        request = request.redirected_from
+    if not belongs_to_query:
+        return False
+    if response.status in REDIRECTS:
+        location = response.headers.get('location')
+        # Wait for the final response only for redirects between query endpoints.
+        return not location or not is_query_endpoint(urljoin(response.url, location))
+    return True
+
+
+def query_payload(response):
+    if response.status in REDIRECTS:
+        location = response.headers.get('location')
+        if not location:
+            raise RetryableQuery("查询重定向缺少目标地址")
+        target = urljoin(response.url, location)
+        if is_query_endpoint(target):
+            raise RetryableQuery("查询接口跳转尚未完成")
+        # Do not print redirect parameters; they may contain authentication data.
+        raise ManualAction("余票请求被重定向到非查询页面，可能是登录或验证页；请查看网站提示")
+    if response.status in (401, 403, 429):
+        raise ManualAction(f"查询被拒绝或限流（HTTP {response.status}），请检查登录和网站提示")
+    if response.status >= 500:
+        raise RetryableQuery(f"查询服务暂时异常（HTTP {response.status}）")
+    if response.status != 200:
+        raise ManualAction(f"查询返回异常状态 HTTP {response.status}，请检查网站提示")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RetryableQuery("查询响应暂时无法解析") from exc
+    if not isinstance(payload, dict):
+        raise RetryableQuery("查询响应格式异常")
+    messages = str(payload.get('messages', ''))
+    if any(word in messages for word in ('登录', '验证码', '验证失败', '频繁', '频率', '访问异常', '未完成订单', '未支付订单')):
+        raise ManualAction("查询响应提示登录、验证、限流或未完成订单问题，请查看网站提示")
+    if payload.get('status') is not True:
+        raise RetryableQuery("网站本次查询返回未成功")
+    return payload
+
+
 class Booker:
     def __init__(self, page, trip, state_dir, preview=False):
         self.page, self.trip = page, trip
         self.state_file = Path(state_dir) / "attempt.json"
         self.preview = preview
         self.started = False
+        self.prepared_day = None
         self.query_stage = "尚未查询"
         self.browser_events = []
         page.on("close", lambda _: self.browser_events.append("page_closed"))
@@ -128,7 +191,7 @@ class Booker:
         self.query_stage = "加载查询页"
         try:
             return self._query(day)
-        except ManualAction:
+        except (ManualAction, RetryableQuery):
             raise
         except Exception as exc:
             raise self.query_failure(exc) from exc
@@ -137,7 +200,8 @@ class Booker:
         self.query_stage = stage
         print(stage, flush=True)
 
-    def _query(self, day):
+    def prepare_query(self, day):
+        self.prepared_day = None
         self.page.goto(QUERY_URL, wait_until="domcontentloaded")
         self.progress("等待车站控件初始化")
         self.page.wait_for_function("""() => window.jQuery && window.jQuery.isReady
@@ -155,22 +219,35 @@ class Booker:
         date_input.dispatch_event("change")
         date_input.press("Tab")
         self.page.locator("#sf2" if self.trip.student else "#sf1").check()
+        self.prepared_day = day
+
+    def _query(self, day):
+        if self.prepared_day != day:
+            self.prepare_query(day)
+        self.prepared_day = None
+        date_input = self.page.locator('input#train_date')
         if (date_input.input_value() != day
                 or self.page.locator('#fromStationText').input_value() != self.trip.origin
-                or self.page.locator('#toStationText').input_value() != self.trip.destination):
+                or self.page.locator('#toStationText').input_value() != self.trip.destination
+                or not self.page.locator('#sf2' if self.trip.student else '#sf1').is_checked()):
             raise ManualAction("查询表单被网页重置，未点击查询；请检查车站和可售日期")
         self.progress("点击查询，等待余票结果")
         # Await this specific query response, rather than accidentally reading stale rows.
-        with self.page.expect_response(lambda r: "/otn/leftTicket/query" in r.url and r.request.method == "GET") as response:
-            self.page.locator("#query_ticket").click()
+        from playwright.sync_api import TimeoutError as PlaywrightTimeout
+        try:
+            with self.page.expect_response(query_response_ready) as response:
+                self.page.locator("#query_ticket").click()
+        except PlaywrightTimeout as exc:
+            self.guard()
+            raise RetryableQuery("等待余票查询响应超时") from exc
         result = response.value
-        if result.status != 200 or result.json().get("status") is not True:
-            raise ManualAction("查询未成功，请检查网站提示")
+        self.guard()
+        payload = query_payload(result)
         self.page.wait_for_function("() => !document.querySelector('#query_ticket').classList.contains('btn-disabled')")
         self.guard()
         self.progress("按配置筛选车次、发车时间和席别")
         rows = self.page.locator('#queryLeftTable tr[id^="ticket_"]')
-        if rows.count() == 0 and result.json().get("data", {}).get("result"):
+        if rows.count() == 0 and payload.get("data", {}).get("result"):
             raise ManualAction("查询有数据但页面行未找到，可能需要更新选择器")
         for row in rows.all():
             train = row.locator(".number").inner_text().strip()
@@ -397,15 +474,40 @@ class Booker:
             raise ManualAction("存在购票尝试记录。请先检查未完成订单，确认后使用 clear-attempt 清除记录")
         self.started = True
         self.trip.validate()
+        if self.trip.start_at:
+            from .schedule import parse_start_at, wait_until, SHANGHAI
+            target = parse_start_at(self.trip.start_at)
+            print(f"定时查询：{target:%Y-%m-%d %H:%M:%S}（北京时间）。", flush=True)
+            if target <= datetime.now(SHANGHAI):
+                print("设定时间已到或已过，立即开始。", flush=True)
+            else:
+                # Pump browser events while waiting, so manual login can finish.
+                pause = lambda seconds: self.page.wait_for_timeout(seconds * 1000)
+                wait_until(target - timedelta(seconds=60), sleep=pause)
+                self.progress("提前准备首个日期的查询表单")
+                self.prepare_query(next(self.trip.dates()))
+                print("表单已准备好，等待放票时间；请勿修改页面或关闭浏览器。", flush=True)
+                wait_until(target, sleep=pause)
+        # Waiting for release does not consume the ticket-monitoring budget.
         deadline = time.monotonic() + self.trip.timeout_minutes * 60
+        failures = 0
         while time.monotonic() < deadline:
             for day in self.trip.dates():
                 if time.monotonic() >= deadline:
                     break
                 print(f"查询 {day} {self.trip.origin} → {self.trip.destination}", flush=True)
-                found = self.query(day)
+                try:
+                    found = self.query(day)
+                except RetryableQuery as exc:
+                    failures += 1
+                    found = None
+                    print(f"{exc}；尚未预订，将继续查询。", flush=True)
                 if found:
                     return self.order(*found, day)
                 # Rate limit every query, including queries for different dates.
-                time.sleep(min(self.trip.poll_seconds, max(0, deadline - time.monotonic())))
+                delay = min(self.trip.poll_seconds, max(0, deadline - time.monotonic()))
+                print(f"等待 {delay:g} 秒后进行下一次查询。", flush=True)
+                time.sleep(delay)
+        if failures:
+            return f"监控时间已结束，未进入预订；期间有 {failures} 次查询失败，不能据此认定无票。"
         return "监控时间已结束，没有找到符合条件的余票。"

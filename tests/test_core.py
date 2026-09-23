@@ -4,7 +4,7 @@ from datetime import date
 from unittest.mock import Mock, patch
 
 from rail_agent.config import Trip, enough_tickets
-from rail_agent.browser import Booker, ManualAction
+from rail_agent.browser import Booker, ManualAction, RetryableQuery, query_payload
 
 
 def trip(**changes):
@@ -46,6 +46,44 @@ class ConfigTests(unittest.TestCase):
 
 
 class BookingTests(unittest.TestCase):
+    def test_temporary_query_failure_retries_after_configured_interval(self):
+        with tempfile.TemporaryDirectory() as directory:
+            b = Booker(Mock(), trip(poll_seconds=15), directory)
+            button = Mock()
+            b.query = Mock(side_effect=[RetryableQuery('临时失败'), (button, 'G1')])
+            b.order = Mock(return_value='订单流程结果')
+            with patch.object(Trip, 'validate'), patch('rail_agent.browser.time.monotonic', return_value=0), \
+                 patch('rail_agent.browser.time.sleep') as sleep:
+                self.assertEqual(b.run(), '订单流程结果')
+            sleep.assert_called_once_with(15)
+            self.assertEqual(b.query.call_count, 2)
+            b.order.assert_called_once()
+
+    def test_manual_query_failure_is_not_retried(self):
+        with tempfile.TemporaryDirectory() as directory:
+            b = Booker(Mock(), trip(), directory)
+            b.query = Mock(side_effect=ManualAction('需要登录'))
+            with patch.object(Trip, 'validate'), patch('rail_agent.browser.time.sleep') as sleep:
+                with self.assertRaises(ManualAction):
+                    b.run()
+            sleep.assert_not_called()
+            b.query.assert_called_once()
+
+    def test_query_response_failure_classification(self):
+        response = Mock(status=200)
+        response.json.return_value = {'status':False, 'messages':['系统繁忙']}
+        with self.assertRaises(RetryableQuery):
+            query_payload(response)
+        response.json.return_value = {'status':False, 'messages':['请先登录']}
+        with self.assertRaises(ManualAction):
+            query_payload(response)
+        response.status = 503
+        with self.assertRaises(RetryableQuery):
+            query_payload(response)
+        response.status = 429
+        with self.assertRaises(ManualAction):
+            query_payload(response)
+
     def test_lookalike_domain_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             page = Mock(url="https://12306.cn.evil.example/")
